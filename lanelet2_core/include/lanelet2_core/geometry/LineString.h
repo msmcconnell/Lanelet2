@@ -215,6 +215,27 @@ IfLS<LineString3dT, bool> intersects3d(const LineString3dT& linestring, const Li
  */
 template <typename LineString1T, typename LineString2T>
 std::pair<LineString1T, LineString2T> align(LineString1T left, LineString2T right);
+
+/**
+ * @brief create a point by moving laterally arcLength.distance from the linestring point at arcCoords.length (left is
+ * positive)
+ */
+template <typename LineString2dT>
+BasicPoint2d fromArcCoordinates(const LineString2dT& lineString, const ArcCoordinates& arcCoords);
+
+/**
+ * @brief create a point by moving distance laterally from the linestring at the point idx. The direction is the average
+ * of the directions orthogonal to the segments neighbouring the point.
+ */
+template <typename LineString2dT>
+BasicPoint2d fromArcCoordinatesAtPoint(const LineString2dT& lineString, const int idx, const double distance);
+
+/**
+ * @brief create a linestring that is offset to the original one (left = positive)
+ */
+template <typename LineString2dT>
+BasicLineString2d offset(const LineString2dT& lineString, const double distance);
+
 }  // namespace geometry
 }  // namespace lanelet
 

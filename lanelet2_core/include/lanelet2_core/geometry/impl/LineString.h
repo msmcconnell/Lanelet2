@@ -5,6 +5,8 @@
 #include "../GeometryHelper.h"
 #include "../Point.h"
 
+#include <iostream>
+
 namespace lanelet {
 namespace geometry {
 namespace internal {
@@ -72,6 +74,37 @@ std::pair<BasicPoint3d, BasicPoint3d> projectedPoint3d(const ConstHybridLineStri
 
 std::pair<BasicPoint3d, BasicPoint3d> projectedPoint3d(const CompoundHybridLineString3d& l1,
                                                        const CompoundHybridLineString3d& l2);
+
+template <typename HybridLineStringT>
+BasicPoint2d fromArcCoords(const HybridLineStringT& hLineString, const BasicPoint2d& projStart, const int startIdx,
+                           const int endIdx, const double distance) {
+  const auto dx(hLineString[endIdx](0) - hLineString[startIdx](0));
+  const auto dy(hLineString[endIdx](1) - hLineString[startIdx](1));
+
+  return projStart + Eigen::Vector2d(-dy, dx).normalized() * distance;
+}
+
+template <typename LineString2dT>
+BasicPoint2d shiftLateral(const LineString2dT& lineString, const int idx, const double offset) {
+  Eigen::Vector2d perpendicular;
+  double realOffset = offset;
+  if (idx == 0)
+    perpendicular = utils::toBasicPoint(lineString[idx + 1]) - utils::toBasicPoint(lineString[idx]);
+  else if (idx == lineString.size() - 1)
+    perpendicular = utils::toBasicPoint(lineString[idx]) - utils::toBasicPoint(lineString[idx - 1]);
+  else {
+    Eigen::Vector2d following =
+        (utils::toBasicPoint(lineString[idx + 1]) - utils::toBasicPoint(lineString[idx])).normalized();
+    Eigen::Vector2d preceding =
+        (utils::toBasicPoint(lineString[idx]) - utils::toBasicPoint(lineString[idx - 1])).normalized();
+    perpendicular = following + preceding;
+    realOffset = 1 / std::cos(0.5 * std::acos(following.dot(preceding)));
+  }
+
+  Eigen::Vector2d direction(-perpendicular(1), perpendicular(0));
+  return utils::toBasicPoint(lineString[idx]) + direction.normalized() * realOffset;
+}
+
 }  // namespace internal
 
 template <typename LineStringIterator>
@@ -283,5 +316,50 @@ std::pair<LineString1T, LineString2T> align(LineString1T left, LineString2T righ
   }
   return {left, right};
 }
+
+template <typename LineString2dT>
+BasicPoint2d fromArcCoordinates(const LineString2dT& lineString, const ArcCoordinates& arcCoords) {
+  auto hLineString = utils::toHybrid(lineString);
+  auto ratios = accumulatedLengthRatios(lineString);
+  const auto llength = length(lineString);
+  int startIdx = -1, endIdx = -1;
+  for (int i = 0; i < static_cast<int>(ratios.size()); ++i) {
+    if (ratios.at(static_cast<size_t>(i)) * llength > arcCoords.length) {
+      startIdx = i;
+      endIdx = i + 1;
+      break;
+    }
+  }
+  if (endIdx == -1) {
+    endIdx = lineString.size() - 1;
+    startIdx = endIdx - 1;
+  }
+  return internal::fromArcCoords(hLineString, interpolatedPointAtDistance(utils::to2D(lineString), arcCoords.length),
+                                 startIdx, endIdx, arcCoords.distance);
+}
+
+// negative means from back
+template <typename LineString2dT>
+BasicPoint2d fromArcCoordinatesAtPoint(const LineString2dT& lineString, const int idx, const double distance) {
+  if (std::abs(idx) > lineString.size() - 1) throw InvalidInputError("Index out of bounds");
+  int startIdx = (idx >= 0) ? std::max(0, idx - 1) : std::max(0, static_cast<int>(lineString.size()) + idx - 1);
+  int endIdx = (idx >= 0)
+                   ? std::min(idx + 1, static_cast<int>(lineString.size()) - 1)
+                   : std::min(static_cast<int>(lineString.size()) + idx + 1, static_cast<int>(lineString.size()) - 1);
+  int pIdx = (idx >= 0) ? idx : static_cast<int>(lineString.size()) + idx;
+  auto hLineString = utils::toHybrid(lineString);
+  return internal::fromArcCoords(hLineString, hLineString[pIdx], startIdx, endIdx, distance);
+}
+
+template <typename LineString2dT>
+BasicLineString2d offset(const LineString2dT& lineString, const double distance) {
+  assert(lineString.size() > 1);
+  BasicLineString2d ret(lineString.size());
+  for (int i = 0; i < lineString.size(); ++i) {
+    ret[i] = internal::shiftLateral(lineString, i, distance);
+  }
+  return ret;
+}
+
 }  // namespace geometry
 }  // namespace lanelet

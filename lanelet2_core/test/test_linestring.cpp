@@ -381,3 +381,28 @@ TYPED_TEST(HybridLineStringsTest, segmentLength) {  // NOLINT
   auto segment = this->ls1.segment(0);
   EXPECT_DOUBLE_EQ(geometry::length(segment), 1.);
 }
+
+TYPED_TEST(TwoDLineStringsTest, fromArcCoords) {
+  Id id = 0;
+  Point3d p1 = Point3d(++id, 0., 0.);
+  Point3d p2 = Point3d(++id, 0., 10.);
+  LineString3d ls(++id, Points3d{p1, p2});
+  auto ap = geometry::fromArcCoordinates(utils::to2D(ls), ArcCoordinates({5, 2}));
+  EXPECT_EQ(ap, BasicPoint2d(-2, 5));
+}
+
+TYPED_TEST(TwoDLineStringsTest, offset) {
+  Id id = 0;
+  Point3d p1 = Point3d(++id, 1., 0.);
+  Point3d p2 = Point3d(++id, 1., 1.);
+  Point3d p3 = Point3d(++id, 4., 1.);
+  Point3d p4 = Point3d(++id, 4., 3.);
+  LineString3d ls(++id, Points3d{p1, p2, p3, p4});
+  auto ap = geometry::offset(utils::to2D(ls), 1.);
+  BasicLineString2d comp({BasicPoint2d(0, 0), BasicPoint2d(0, 2), BasicPoint2d(3, 2), BasicPoint2d(3, 3)});
+  // required due to numeric approximation errors
+  for (int i = 0; i < ls.size(); ++i) {
+    EXPECT_NEAR(ap[i].x(), comp[i].x(), 1e-9);
+    EXPECT_NEAR(ap[i].y(), comp[i].y(), 1e-9);
+  }
+}
