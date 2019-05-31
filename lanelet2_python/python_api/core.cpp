@@ -226,7 +226,8 @@ class IsConstPrimitive : public def_visitor<IsConstPrimitive<PrimT>> {
   void visit(ClassT& c) const {
     namespace py = boost::python;
     c.add_property("id", &PrimT::id);
-    c.add_property("attributes", py::make_function(&PrimT::attributes, py::return_internal_reference<>()));
+    const AttributeMap& (PrimT::*attr)() const = &PrimT::attributes;
+    c.add_property("attributes", getRefFunc(attr));
     c.def(self == self);  // NOLINT
     c.def(self != self);  // NOLINT
     c.def(self_ns::str(self_ns::self));
@@ -326,13 +327,13 @@ using SetAttrSig = void (T::*)(const std::string&, const Attribute&);
 template <typename T>
 using GetAttrSig = const Attribute& (ConstPrimitive<T>::*)(const std::string&)const;
 
-template <typename LayerT = PointLayer>
+template <typename LayerT = PointLayer, typename... ClassArgs>
 auto wrapLayer(const char* layerName) {
   auto get = static_cast<typename LayerT::PrimitiveT (LayerT::*)(Id)>(&LayerT::get);
   auto search = static_cast<typename LayerT::PrimitiveVec (LayerT::*)(const BoundingBox2d&)>(&LayerT::search);
   auto nearest =
       static_cast<typename LayerT::PrimitiveVec (LayerT::*)(const BasicPoint2d&, unsigned)>(&LayerT::nearest);
-  return class_<LayerT, boost::noncopyable>(layerName, no_init)
+  return class_<LayerT, boost::noncopyable, ClassArgs...>(layerName, no_init)
       .def("exists", &LayerT::exists, "Checks if a point exists")
       .def("get", get, "Gets a point with specified Id")
       .def("__iter__", iterator<LayerT>())
@@ -826,10 +827,13 @@ BOOST_PYTHON_MODULE(PYTHON_API_MODULE_NAME) {  // NOLINT
   class_<SpeedLimit, boost::noncopyable, std::shared_ptr<SpeedLimit>, bases<TrafficSign>>(  // NOLINT
       "SpeedLimit", "A speed limit regulatory element", no_init);
 
-  wrapLayer<AreaLayer>("AreaLayer")
+  class_<PrimitiveLayer<Area>, boost::noncopyable>("PrimitiveLayerArea", no_init);
+  class_<PrimitiveLayer<Lanelet>, boost::noncopyable>("PrimitiveLayerLanelet", no_init);
+
+  wrapLayer<AreaLayer, bases<PrimitiveLayer<Area>>>("AreaLayer")
       .def("findUsages", +[](AreaLayer& self, RegulatoryElementPtr& e) { return self.findUsages(e); })
       .def("findUsages", +[](AreaLayer& self, LineString3d& ls) { return self.findUsages(ls); });
-  wrapLayer<LaneletLayer>("LaneletLayer")
+  wrapLayer<LaneletLayer, bases<PrimitiveLayer<Lanelet>>>("LaneletLayer")
       .def("findUsages", +[](LaneletLayer& self, RegulatoryElementPtr& e) { return self.findUsages(e); })
       .def("findUsages", +[](LaneletLayer& self, LineString3d& ls) { return self.findUsages(ls); });
   wrapLayer<PolygonLayer>("PolygonLayer").def("findUsages", +[](PolygonLayer& self, Point3d& p) {
