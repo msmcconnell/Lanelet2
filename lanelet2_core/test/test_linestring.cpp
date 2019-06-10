@@ -406,3 +406,24 @@ TYPED_TEST(TwoDLineStringsTest, offset) {
     EXPECT_NEAR(ap[i].y(), comp[i].y(), 1e-9);
   }
 }
+
+TYPED_TEST(TwoDLineStringsTest, getSelfIntersections) {
+  Id id = 0;
+  Point3d p1 = Point3d(++id, 1., 0.);
+  Point3d p2 = Point3d(++id, 1., 2.);
+  Point3d p3 = Point3d(++id, 2., 2.);
+  Point3d p4 = Point3d(++id, 0., 0.);
+  Point3d p5 = Point3d(++id, 1.5, 2.);
+  LineString3d ls(++id, Points3d{p1, p2, p3, p4, p5});
+  LineString2d ls2d = utils::to2D(ls);
+  auto intersections = geometry::getSelfIntersections(ls2d);
+  ASSERT_EQ(intersections.size(), 3);
+  EXPECT_EQ(intersections.front().firstSegmentIdx, 0);
+  EXPECT_EQ(intersections.front().lastSegmentIdx, 2);
+  EXPECT_NEAR(intersections.front().intersectionPoint(0), 1, 1e-9);
+  EXPECT_NEAR(intersections.front().intersectionPoint(1), 1, 1e-9);
+  EXPECT_EQ(intersections.at(1).firstSegmentIdx, 0);
+  EXPECT_EQ(intersections.at(1).lastSegmentIdx, 3);
+  EXPECT_NEAR(intersections.at(1).intersectionPoint(0), 1, 1e-9);
+  EXPECT_NEAR(intersections.at(1).intersectionPoint(1), 4. / 3., 1e-9);
+}

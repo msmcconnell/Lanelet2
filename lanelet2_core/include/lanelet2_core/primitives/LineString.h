@@ -23,6 +23,14 @@ using ConstSegment3d = Segment<ConstPoint3d>;
 using BasicSegment2d = Segment<BasicPoint2d>;
 using BasicSegment3d = Segment<BasicPoint3d>;
 
+struct SelfIntersection2d {
+  int firstSegmentIdx;
+  int lastSegmentIdx;
+  BasicPoint2d intersectionPoint;
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+};
+using SelfIntersections2d = std::vector<SelfIntersection2d, Eigen::aligned_allocator<SelfIntersection2d>>;
+
 namespace traits {
 template <>
 struct PrimitiveTraits<BasicLineString2d> {
