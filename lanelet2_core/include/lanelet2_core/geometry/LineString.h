@@ -230,6 +230,7 @@ BasicPoint2d fromArcCoordinates(const LineString2dT& lineString, const ArcCoordi
 template <typename LineString2dT>
 BasicPoint2d fromArcCoordinatesAtPoint(const LineString2dT& lineString, const int idx, const double distance);
 
+// SelfIntersections2d getSelfIntersections(const BasicLineString2d& lineString);
 template <typename LineString2dT>
 SelfIntersections2d getSelfIntersections(const LineString2dT& lineString);
 

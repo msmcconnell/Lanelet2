@@ -416,7 +416,11 @@ TYPED_TEST(TwoDLineStringsTest, getSelfIntersections) {
   Point3d p5 = Point3d(++id, 1.5, 2.);
   LineString3d ls(++id, Points3d{p1, p2, p3, p4, p5});
   LineString2d ls2d = utils::to2D(ls);
-  auto intersections = geometry::getSelfIntersections(ls2d);
+  BasicLineString2d bls2d;
+  for (const auto& p : ls2d) {
+    bls2d.push_back(utils::toBasicPoint(p));
+  }
+  auto intersections = geometry::getSelfIntersections(bls2d);
   ASSERT_EQ(intersections.size(), 3);
   EXPECT_EQ(intersections.front().firstSegmentIdx, 0);
   EXPECT_EQ(intersections.front().lastSegmentIdx, 2);

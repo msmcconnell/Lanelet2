@@ -379,18 +379,60 @@ BasicPoint2d fromArcCoordinatesAtPoint(const LineString2dT& lineString, const in
   return internal::fromArcCoords(hLineString, hLineString[pIdx], startIdx, endIdx, distance);
 }
 
+// template <typename LineString2dT>
+// SelfIntersections2d getSelfIntersections(const LineString2dT& lineString) {
+//  if (lineString.size() <= 3) return SelfIntersections2d();
+//  SelfIntersections2d ret;
+//  auto lsFromSegment = [](const typename LineString2dT::ConstSegmentType& seg) -> BasicLineString2d {
+//    return BasicLineString2d({utils::toBasicPoint(seg.first), utils::toBasicPoint(seg.second)});
+//  };
+//  auto intersectSegments = [lsFromSegment](
+//                               const typename LineString2dT::ConstSegmentType& lhs,
+//                               const typename LineString2dT::ConstSegmentType& rhs) -> boost::optional<BasicPoint2d> {
+//    auto ls1 = lsFromSegment(lhs);
+//    auto ls2 = lsFromSegment(rhs);
+//    boost::optional<BasicPoint2d> res;
+//    BasicPoints2d intersection;
+//    boost::geometry::intersection(ls1, ls2, intersection);
+//    assert(intersection.size() < 2);
+//    if (intersection.empty()) return res;
+//    res = intersection.front();
+//    return res;
+//  };
+//  for (int i = 0; i < lineString.size() - 1; ++i) {
+//    const auto& segment = lineString.segment(i);
+//    for (int j = i + 2; j < lineString.size() - 1; ++j) {
+//      const auto& otherSegment = lineString.segment(j);
+//      auto intersection = intersectSegments(segment, otherSegment);
+//      if (intersection) {
+//        ret.emplace_back(SelfIntersection2d{i, j, *intersection});
+//      }
+//    }
+//  }
+//  std::sort(
+//      ret.begin(), ret.end(), [&lineString](const SelfIntersection2d& lhs, const SelfIntersection2d& rhs) -> bool {
+//        if (lhs.firstSegmentIdx == rhs.firstSegmentIdx) {
+//          BasicPoints2d pointsToCompare({lhs.intersectionPoint, rhs.intersectionPoint});
+//          if (internal::sortAlongSIdxs(BasicLineString2d({utils::toBasicPoint(lineString[lhs.firstSegmentIdx]),
+//                                                          utils::toBasicPoint(lineString[lhs.firstSegmentIdx + 1])}),
+//                                       pointsToCompare)
+//                  .front() == 0)
+//            return true;
+//          return false;
+//        }
+//        return (lhs.firstSegmentIdx < rhs.firstSegmentIdx);
+//      });
+//  return ret;
+//}
+
 template <typename LineString2dT>
 SelfIntersections2d getSelfIntersections(const LineString2dT& lineString) {
   if (lineString.size() <= 3) return SelfIntersections2d();
   SelfIntersections2d ret;
-  auto lsFromSegment = [](const typename LineString2dT::ConstSegmentType& seg) -> BasicLineString2d {
-    return BasicLineString2d({utils::toBasicPoint(seg.first), utils::toBasicPoint(seg.second)});
-  };
-  auto intersectSegments = [lsFromSegment](
-                               const typename LineString2dT::ConstSegmentType& lhs,
-                               const typename LineString2dT::ConstSegmentType& rhs) -> boost::optional<BasicPoint2d> {
-    auto ls1 = lsFromSegment(lhs);
-    auto ls2 = lsFromSegment(rhs);
+  using Segment = std::pair<size_t, size_t>;
+  auto intersectSegments = [&lineString](const Segment& lhs, const Segment& rhs) -> boost::optional<BasicPoint2d> {
+    auto ls1 = BasicLineString2d({lineString.at(lhs.first), lineString.at(lhs.second)});
+    auto ls2 = BasicLineString2d({lineString.at(rhs.first), lineString.at(rhs.second)});
     boost::optional<BasicPoint2d> res;
     BasicPoints2d intersection;
     boost::geometry::intersection(ls1, ls2, intersection);
@@ -399,13 +441,13 @@ SelfIntersections2d getSelfIntersections(const LineString2dT& lineString) {
     res = intersection.front();
     return res;
   };
-  for (int i = 0; i < lineString.size() - 1; ++i) {
-    const auto& segment = lineString.segment(i);
-    for (int j = i + 2; j < lineString.size() - 1; ++j) {
-      const auto& otherSegment = lineString.segment(j);
+  for (size_t i = 0; i < lineString.size() - 1; ++i) {
+    const auto& segment = std::make_pair(i, i + 1);
+    for (size_t j = i + 2; j < lineString.size() - 1; ++j) {
+      const auto& otherSegment = std::make_pair(j, j + 1);
       auto intersection = intersectSegments(segment, otherSegment);
       if (intersection) {
-        ret.emplace_back(SelfIntersection2d{i, j, *intersection});
+        ret.emplace_back(SelfIntersection2d{static_cast<int>(i), static_cast<int>(j), *intersection});
       }
     }
   }
@@ -433,87 +475,46 @@ BasicLineString2d offset(const LineString2dT& lineString, const double distance)
     ret[i] = internal::shiftLateral(lineString, i, distance);
   }
 
-  auto sortAlongS = [](const BasicLineString2d& ls, const BasicPoints2d& points) -> BasicPoints2d {
-    if (points.empty()) throw std::runtime_error("Can't operate on empy point list");
-    std::vector<std::pair<size_t, double>> projections(points.size());
-    for (size_t i = 0; i < points.size(); ++i) {
-      const auto& p = points.at(i);
-      auto arcC = toArcCoordinates(ls, p);
-      projections[i] = std::make_pair(i, arcC.length);
+  auto earliestIntersectionBehind = [&lineString](const SelfIntersections2d& sInt, const int intIdx) {
+    using SPoint = std::tuple<int, double>;
+    using SList = std::vector<SPoint>;
+    const auto segToCheckIdx = sInt.at(intIdx).lastSegmentIdx;
+    BasicLineString2d segLs(
+        {utils::toBasicPoint(lineString[segToCheckIdx]), utils::toBasicPoint(lineString[segToCheckIdx + 1])});
+    SList startingIntersections;
+    for (int i = 0; i < sInt.size(); ++i) {
+      if (sInt.at(i).firstSegmentIdx == segToCheckIdx)
+        startingIntersections.emplace_back(
+            std::make_tuple(i, toArcCoordinates(segLs, sInt.at(i).intersectionPoint).length));
     }
-    std::sort(projections.begin(), projections.end(),
-              [](const std::pair<size_t, double>& lhs, const std::pair<size_t, double>& rhs) -> bool {
-                return lhs.second < rhs.second;
-              });
-    BasicPoints2d ret;
-    for (const auto& p : projections) {
-      ret.emplace_back(points.at(p.first));
+    std::sort(startingIntersections.begin(), startingIntersections.end(),
+              [](const SPoint& lhs, const SPoint& rhs) { return std::get<1>(lhs) < std::get<1>(rhs); });
+    auto sToBeat = toArcCoordinates(segLs, sInt.at(intIdx).intersectionPoint).length;
+    for (const auto& si : startingIntersections) {
+      if (std::get<1>(si) > sToBeat) return std::get<0>(si);
     }
-    return ret;
+    return -1;
   };
-
-  auto hls = utils::toHybrid(lineString);
-  BasicPoints2d selfIntersections;
-  boost::geometry::intersection(hls, hls, selfIntersections);
-  selfIntersections = sortAlongS(hls.basicLineString(), selfIntersections);
-  BasicLineString2d lsWithIntersections = lineString.basicLineString();
+  auto selfIntersections = getSelfIntersections(ret);
   if (selfIntersections.empty()) return ret;
-  std::map<int, BasicPoints2d> segmentMap;
-  for (const auto& p : selfIntersections) {
-    std::vector<size_t> intersectingSegments;
-    for (size_t idx = 0; idx < lineString.size() - 1; ++idx) {
-      auto segment = BasicLineString2d({utils::toBasicPoint(hls[idx]), utils::toBasicPoint(hls[idx + 1])});
-      if (distance2d(segment, p) < 1e-4) intersectingSegments.push_back(idx);
+  int curSegment = 0;
+  int nextIntersection = 0;
+  BasicLineString2d res;
+  while (nextIntersection < selfIntersections.size()) {
+    res.insert(res.end(), ret.begin() + curSegment,
+               ret.begin() + selfIntersections.at(nextIntersection).firstSegmentIdx);
+    res.push_back(selfIntersections.at(nextIntersection).intersectionPoint);
+    curSegment = selfIntersections.at(nextIntersection).lastSegmentIdx;
+    auto earliestOnSameSegment = earliestIntersectionBehind(selfIntersections, nextIntersection);
+    if (earliestOnSameSegment != -1) {
+      nextIntersection = earliestOnSameSegment;
     }
-    //    if (intersectingSegments.size() != 2)
-    //      throw std::runtime_error("Can handle only intersection of two lines, got " +
-    //                               std::to_string(intersectingSegments.size()));
-    segmentMap[intersectingSegments.front()].push_back(p);
-    segmentMap[intersectingSegments.back()].push_back(p);
+    while (nextIntersection < selfIntersections.size() &&
+           selfIntersections.at(nextIntersection).firstSegmentIdx < curSegment)
+      ++nextIntersection;
   }
-  for (auto& pair : segmentMap) {
-    pair.second = sortAlongS(BasicLineString2d({hls[pair.first], hls[pair.first + 1]}), pair.second);
-  }
-  //  auto getEarlier = [](const BasicLineString2d& ls, const BasicPoints2d& points, const int pivot) -> BasicPoints2d {
-  //    if (points.empty()) throw std::runtime_error("Can't operate on empy point list");
-  //    BasicPoints2d ret;
-  //    auto pointsExceptPivot = points;
-  //    pointsExceptPivot.erase(pointsExceptPivot.begin() + pivot);
-  //    auto pivotS = toArcCoordinates(ls, points.at(static_cast<size_t>(pivot))).length;
-  //    for (size_t i = 0; i < pointsExceptPivot.size(); ++i) {
-  //      const auto& p = pointsExceptPivot.at(i);
-  //      auto arcC = toArcCoordinates(ls, p);
-  //      if (arcC.length < pivotS) {
-  //        ret.push_back(p);
-  //      }
-  //    }
-  //    return ret;
-  //  };
-  auto idxOffset{0};
-  for (const auto& idxPointsPair : segmentMap) {
-    const auto& idx = idxPointsPair.first;
-    const auto& points = idxPointsPair.second;
-    auto sorted = sortAlongS(
-        BasicLineString2d({utils::toBasicPoint(lineString[idx]), utils::toBasicPoint(lineString[idx + 1])}), points);
-    lsWithIntersections.insert(lsWithIntersections.begin() + 1 + idxOffset + idx, sorted.begin(), sorted.end());
-    idxOffset += sorted.size();
-  }
-  std::vector<size_t> toDelete;
-  for (int i = 1; i < static_cast<int>(lsWithIntersections.size()); ++i) {
-    const auto& point = lsWithIntersections.at(static_cast<size_t>(i));
-    if (std::find(selfIntersections.begin(), selfIntersections.end(), point) != selfIntersections.end()) {
-      auto otherOccurrenceIt = std::find(lsWithIntersections.begin() + 1 + i, lsWithIntersections.end(), point);
-      for (int d = i; d < std::distance(lsWithIntersections.begin() + i, otherOccurrenceIt); ++d) {
-        toDelete.push_back(d);
-      }
-      i = std::distance(lsWithIntersections.begin(), otherOccurrenceIt) + 1;
-    }
-  }
-  std::sort(toDelete.begin(), toDelete.end(), std::greater<size_t>());
-  for (const auto& idx : toDelete) {
-    lsWithIntersections.erase(lsWithIntersections.begin() + idx);
-  }
-  return lsWithIntersections;
+  if (curSegment < ret.size() - 1) res.insert(res.end(), ret.begin() + curSegment + 1, ret.end());
+  return ret;
 }
 }  // namespace geometry
 
