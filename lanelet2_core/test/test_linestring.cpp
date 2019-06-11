@@ -407,6 +407,26 @@ TYPED_TEST(TwoDLineStringsTest, offset) {
   }
 }
 
+TYPED_TEST(TwoDLineStringsTest, offset2) {
+  Id id = 0;
+  Point3d p1 = Point3d(++id, 1., 0.);
+  Point3d p2 = Point3d(++id, 1., 5.);
+  Point3d p3 = Point3d(++id, 0.5, 5.5);
+  Point3d p4 = Point3d(++id, -10., 0.);
+  LineString3d ls(++id, Points3d{p1, p2, p3, p4});
+  auto ap = geometry::offset(utils::to2D(ls), 1.5);
+  for (const auto& p : ap) {
+    std::cout << p << std::endl;
+  }
+  ASSERT_EQ(ap.size(), 3);
+  BasicLineString2d comp({BasicPoint2d(0, 0), BasicPoint2d(0, 2), BasicPoint2d(3, 2), BasicPoint2d(3, 3)});
+  // required due to numeric approximation errors
+  //  for (int i = 0; i < ls.size(); ++i) {
+  //    EXPECT_NEAR(ap[i].x(), comp[i].x(), 1e-9);
+  //    EXPECT_NEAR(ap[i].y(), comp[i].y(), 1e-9);
+  //  }
+}
+
 TYPED_TEST(TwoDLineStringsTest, getSelfIntersections) {
   Id id = 0;
   Point3d p1 = Point3d(++id, 1., 0.);

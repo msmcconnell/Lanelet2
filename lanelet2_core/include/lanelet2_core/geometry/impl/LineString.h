@@ -98,7 +98,7 @@ BasicPoint2d shiftLateral(const LineString2dT& lineString, const int idx, const 
     Eigen::Vector2d preceding =
         (utils::toBasicPoint(lineString[idx]) - utils::toBasicPoint(lineString[idx - 1])).normalized();
     perpendicular = following + preceding;
-    realOffset = 1 / std::cos(0.5 * std::acos(following.dot(preceding)));
+    realOffset = offset / std::cos(0.5 * std::acos(following.dot(preceding)));
   }
 
   Eigen::Vector2d direction(-perpendicular(1), perpendicular(0));
@@ -499,7 +499,7 @@ BasicLineString2d offset(const LineString2dT& lineString, const double distance)
   if (selfIntersections.empty()) return ret;
   int curSegment = 0;
   int nextIntersection = 0;
-  BasicLineString2d res;
+  BasicLineString2d res({ret[0]});
   while (nextIntersection < selfIntersections.size()) {
     res.insert(res.end(), ret.begin() + curSegment,
                ret.begin() + selfIntersections.at(nextIntersection).firstSegmentIdx);
@@ -514,7 +514,7 @@ BasicLineString2d offset(const LineString2dT& lineString, const double distance)
       ++nextIntersection;
   }
   if (curSegment < ret.size() - 1) res.insert(res.end(), ret.begin() + curSegment + 1, ret.end());
-  return ret;
+  return res;
 }
 }  // namespace geometry
 
