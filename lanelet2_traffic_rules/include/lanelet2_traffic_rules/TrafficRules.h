@@ -89,14 +89,14 @@ class TrafficRules {  // NOLINT
    * @brief the traffic participant the rules are valid for (e.g. vehicle, car,
    * pedestrian, etc)
    */
-  const std::string& participant() const;
+  virtual const std::string& participant() const;
 
   /**
    * @brief the the location the rules are valid for
    *
    * Should be ISO country code
    */
-  const std::string& location() const;
+  virtual const std::string& location() const;
 
  private:
   Configuration config_;
