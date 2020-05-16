@@ -1,6 +1,8 @@
 # Lanelet2
 
-![build](https://www.mrt.kit.edu/z/gitlab/lanelet2/pipeline.svg) ![coverage](https://www.mrt.kit.edu/z/gitlab/lanelet2/coverage.svg)
+| [Travis CI](https://travis-ci.org/fzi-forschungszentrum-informatik/Lanelet2) | Gitlab CI | Coverage |
+| --------- | --------- | -------- |
+| [![](https://travis-ci.org/fzi-forschungszentrum-informatik/Lanelet2.svg?branch=master)](https://travis-ci.org/fzi-forschungszentrum-informatik/Lanelet2) | ![build](https://www.mrt.kit.edu/z/gitlab/lanelet2/pipeline.svg) | ![coverage](https://www.mrt.kit.edu/z/gitlab/lanelet2/coverage.svg) |
 
 ## Overview
 
@@ -65,11 +67,17 @@ Besides [Catkin](https://catkin-tools.readthedocs.io/en/latest/index.html), the 
 * `rosbash` (for lanelet2_examples)
 
 For Ubuntu, the steps are the following:
-* [Set up ROS](http://wiki.ros.org/ROS/Installation), and install at least `rospack` and `catkin` (e.g. `ros-melodic-rospack` and `ros-melodic-catkin`).
+* [Set up ROS](http://wiki.ros.org/ROS/Installation), and install at least `rospack`, `catkin` and `mrt_cmake_modules` (e.g. `ros-melodic-rospack`, `ros-melodic-catkin`, `ros-melodic-mrt-cmake-modules`):
+```
+sudo apt-get install ros-melodic-rospack ros-melodic-catkin ros-melodic-mrt-cmake-modules
+```
+
 * Install the dependencies above:
 ```bash
 sudo apt-get install libboost-dev libeigen3-dev libgeographic-dev libpugixml-dev libpython-dev libboost-python-dev python-catkin-tools
 ```
+
+**On 16.04 and below**, `mrt_cmake_modules` is not available in ROS and you have to clone it into your workspace (`git clone https://github.com/KIT-MRT/mrt_cmake_modules.git`).
 
 ### Building
 As usual with Catkin, after you have sourced the ros installation, you have to create a workspace and clone all required packages there. Then you can build.
@@ -79,13 +87,37 @@ mkdir catkin_ws && cd catkin_ws && mkdir src
 catkin init
 catkin config --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo # build in release mode (or whatever you prefer)
 cd src
-git clone https://github.com/KIT-MRT/mrt_cmake_modules.git
 git clone https://github.com/fzi-forschungszentrum-informatik/lanelet2.git
 cd ..
 catkin build
 ```
 
 If unsure, see the [Dockerfile](Dockerfile) or the [travis build log](https://travis-ci.org/fzi-forschungszentrum-informatik/Lanelet2). It shows the the full installation process, with subsequent build and test based on a docker image with a clean ubuntu installation.
+
+### Manual, experimental installation using conan
+For non-catkin users, we also offer a conan based install proces. Its experimental and might not work on all platforms, expecially Windows.
+Since conan handles installing all the dependencies, all you need is a cloned repository and conan itself:
+```bash
+pip install conan empy catkin_pkg
+conan remote add bincrafters https://api.bintray.com/conan/bincrafters/public-conan # requried for python bindings
+git clone https://github.com/fzi-forschungszentrum-informatik/lanelet2.git
+cd lanelet2
+```
+
+From here, just use the default conan build/install procedure, e.g.:
+```bash
+conan source .
+conan create . lanelet2/stable --build=missing --options shared=True
+```
+The `shared=True` part is important, because otherwise the lanelet2's plugin mechanisms will fail. E.g. loading maps will be possible.
+
+To be able to use the python bindings, you have to make conan export the PYTHONPATH for lanelet2:
+```bash
+conan install lanelet2/0.0.0@lanelet2/stable -g virtualenv # replace 0.0.0 with the version shown by conan
+source activate.sh
+python -c "import lanelet2" # or whatever you want to do
+source deactivate.sh
+```
 
 ### Python3
 

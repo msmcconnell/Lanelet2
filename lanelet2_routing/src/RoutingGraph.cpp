@@ -71,7 +71,8 @@ struct MoreLaneChanges {
 };
 
 /** @brief Simple helper function to combine shortest paths */
-bool addToPath(ConstLanelets& path, const Optional<LaneletPath>& newElements) {
+template <typename T, typename U>
+bool addToPath(T& path, const Optional<U>& newElements) {
   if (newElements) {
     path.insert(path.end(), ++newElements->begin(), newElements->end());
     return true;  // NOLINT
@@ -206,7 +207,7 @@ struct GetGraph<false> {
 
 template <bool Backw, typename OutVertexT, typename GraphT>
 std::vector<OutVertexT> buildPath(const DijkstraSearchMap<LaneletVertexId>& map, LaneletVertexId vertex, GraphT g) {
-  auto* currInfo = &map.at(vertex);
+  const auto* currInfo = &map.at(vertex);
   auto size = currInfo->length;
   std::vector<OutVertexT> path(size);
   while (true) {
@@ -274,6 +275,48 @@ struct StopIfCostMoreThan {
   }
   double c;
 };
+
+template <typename PathT, typename PrimT>
+Optional<PathT> shortestPathImpl(const PrimT& from, const PrimT& to, RoutingCostId routingCostId, bool withLaneChanges,
+                                 bool withAreas, const internal::RoutingGraphGraph& graph) {
+  auto startVertex = graph.getVertex(from);
+  auto endVertex = graph.getVertex(to);
+  if (!startVertex || !endVertex) {
+    return {};
+  }
+  auto filteredGraph =
+      withLaneChanges
+          ? withAreas ? graph.withAreasAndLaneChanges(routingCostId) : graph.withLaneChanges(routingCostId)
+          : withAreas ? graph.withAreasWithoutLaneChanges(routingCostId) : graph.withoutLaneChanges(routingCostId);
+  DijkstraStyleSearch<FilteredRoutingGraph> search(filteredGraph);
+  class DestinationReached {};
+  try {
+    search.query(*startVertex, [endVertex](const internal::VertexVisitInformation& i) {
+      if (i.vertex == *endVertex) {
+        throw DestinationReached{};
+      }
+      return true;
+    });
+  } catch (DestinationReached) {  // NOLINT
+    return PathT{buildPath<false, PrimT>(search.getMap(), *endVertex, filteredGraph)};
+  }
+  return {};
+}
+
+template <typename RetT, typename Primitives, typename ShortestPathFunc>
+Optional<RetT> shortestPathViaImpl(Primitives routePoints, ShortestPathFunc&& shortestPath) {
+  Primitives path;
+  for (size_t it = 0; it < routePoints.size() - 1; it++) {
+    auto results = shortestPath(routePoints[it], routePoints[it + 1]);
+    if (!!results && !results->empty() && path.empty()) {
+      path.push_back(results->front());
+    }
+    if (!addToPath(path, results)) {
+      return Optional<RetT>();
+    }
+  }
+  return RetT(path);
+}
 }  // namespace
 
 RoutingGraph::RoutingGraph(RoutingGraph&& /*other*/) noexcept = default;
@@ -311,43 +354,34 @@ Optional<Route> RoutingGraph::getRouteVia(const ConstLanelet& from, const ConstL
 
 Optional<LaneletPath> RoutingGraph::shortestPath(const ConstLanelet& from, const ConstLanelet& to,
                                                  RoutingCostId routingCostId, bool withLaneChanges) const {
-  auto startVertex = graph_->getVertex(from);
-  auto endVertex = graph_->getVertex(to);
-  if (!startVertex || !endVertex) {
-    return {};
-  }
-  auto graph = withLaneChanges ? graph_->withLaneChanges(routingCostId) : graph_->withoutLaneChanges(routingCostId);
-  DijkstraStyleSearch<FilteredRoutingGraph> search(graph);
-  class DestinationReached {};
-  try {
-    search.query(*startVertex, [endVertex](const internal::VertexVisitInformation& i) {
-      if (i.vertex == *endVertex) {
-        throw DestinationReached{};
-      }
-      return true;
-    });
-  } catch (DestinationReached) {
-    return LaneletPath{buildPath<false, ConstLanelet>(search.getMap(), *endVertex, graph)};
-  }
-  return {};
+  return shortestPathImpl<LaneletPath, ConstLanelet>(from, to, routingCostId, withLaneChanges, false, *graph_);
+}
+
+Optional<LaneletOrAreaPath> RoutingGraph::shortestPathIncludingAreas(const ConstLaneletOrArea& from,
+                                                                     const ConstLaneletOrArea& to,
+                                                                     RoutingCostId routingCostId,
+                                                                     bool withLaneChanges) const {
+  return shortestPathImpl<LaneletOrAreaPath, ConstLaneletOrArea>(from, to, routingCostId, withLaneChanges, true,
+                                                                 *graph_);
 }
 
 Optional<LaneletPath> RoutingGraph::shortestPathVia(const ConstLanelet& start, const ConstLanelets& via,
                                                     const ConstLanelet& end, RoutingCostId routingCostId,
                                                     bool withLaneChanges) const {
   ConstLanelets routePoints = utils::concatenate({ConstLanelets{start}, via, ConstLanelets{end}});
+  return shortestPathViaImpl<LaneletPath>(
+      routePoints, [&](auto& from, auto& to) { return this->shortestPath(from, to, routingCostId, withLaneChanges); });
+}
 
-  ConstLanelets path;
-  for (size_t it = 0; it < routePoints.size() - 1; it++) {
-    auto results = shortestPath(routePoints[it], routePoints[it + 1], routingCostId, withLaneChanges);
-    if (!!results && !results->empty() && path.empty()) {
-      path.push_back(results->front());
-    }
-    if (!addToPath(path, results)) {
-      return {};
-    }
-  }
-  return LaneletPath(path);
+Optional<LaneletOrAreaPath> RoutingGraph::shortestPathIncludingAreasVia(const ConstLaneletOrArea& start,
+                                                                        const ConstLaneletOrAreas& via,
+                                                                        const ConstLaneletOrArea& end,
+                                                                        RoutingCostId routingCostId,
+                                                                        bool withLaneChanges) const {
+  ConstLaneletOrAreas routePoints = utils::concatenate({ConstLaneletOrAreas{start}, via, ConstLaneletOrAreas{end}});
+  return shortestPathViaImpl<LaneletOrAreaPath>(routePoints, [&](auto& from, auto& to) {
+    return this->shortestPathIncludingAreas(from, to, routingCostId, withLaneChanges);
+  });
 }
 
 Optional<RelationType> RoutingGraph::routingRelation(const ConstLanelet& from, const ConstLanelet& to,
@@ -672,7 +706,8 @@ void RoutingGraph::exportGraphViz(const std::string& filename, const RelationTyp
 
 //! Helper function to slim down getDebugLaneletMap
 RelationType allowedRelationsfromConfiguration(bool includeAdjacent, bool includeConflicting) {
-  RelationType allowedRelations{RelationType::Successor | RelationType::Left | RelationType::Right};
+  RelationType allowedRelations{RelationType::Successor | RelationType::Left | RelationType::Right |
+                                RelationType::Area};
   if (includeAdjacent) {
     allowedRelations |= RelationType::AdjacentLeft;
     allowedRelations |= RelationType::AdjacentRight;
@@ -699,7 +734,7 @@ class DebugMapBuilder {
   explicit DebugMapBuilder(const FilteredRoutingGraph& graph) : graph_{graph} {}
   LaneletMapPtr run(const internal::LaneletOrAreaToVertex& loa) {
     LaneletMapPtr output = std::make_shared<LaneletMap>();
-    for (auto& vertex : loa) {
+    for (const auto& vertex : loa) {
       visitVertex(vertex);
     }
     auto lineStrings = utils::transform(lineStringMap_, [](auto& mapLs) { return mapLs.second; });
@@ -722,7 +757,7 @@ class DebugMapBuilder {
     }
   }
 
-  LaneletOrAreaPair getPair(const ConstLaneletOrArea& first, const ConstLaneletOrArea& second) {
+  static LaneletOrAreaPair getPair(const ConstLaneletOrArea& first, const ConstLaneletOrArea& second) {
     return first.id() < second.id() ? LaneletOrAreaPair(first, second) : LaneletOrAreaPair(second, first);
   }
 
@@ -748,7 +783,6 @@ class DebugMapBuilder {
     }
   }
 
- private:
   FilteredRoutingGraph graph_;
   std::unordered_map<LaneletOrAreaPair, LineString3d> lineStringMap_;  // Stores all relations
   std::unordered_map<ConstLaneletOrArea, Point2d> pointMap_;           // Stores all 'edges'
@@ -768,9 +802,9 @@ LaneletMapPtr RoutingGraph::getDebugLaneletMap(RoutingCostId routingCostId, bool
 RoutingGraph::Errors RoutingGraph::checkValidity(bool throwOnError) const {
   Errors errors;
   for (const auto& laWithVertex : graph_->vertexLookup()) {
-    auto& la = laWithVertex.first;
+    const auto& la = laWithVertex.first;
     auto ll = laWithVertex.first.lanelet();
-    auto& vertex = laWithVertex.second;
+    const auto& vertex = laWithVertex.second;
     auto id = la.id();
     // Check left relation
     Optional<ConstLanelet> left;

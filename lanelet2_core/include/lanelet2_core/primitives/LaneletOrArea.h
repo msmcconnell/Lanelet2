@@ -62,12 +62,12 @@ class ConstLaneletOrArea {
 
   template <typename T>
   std::vector<std::shared_ptr<const T>> regulatoryElementsAs() const {
-    return applyVisitor([](auto& elem) { return elem.template regulatoryElementAs<T>(); });
+    return applyVisitor([](auto& elem) { return elem.template regulatoryElementsAs<T>(); });
   }
 
   //! return the managed lanelet
   Optional<ConstLanelet> lanelet() const {
-    auto ll = boost::get<ConstLanelet>(&laneletOrArea_);
+    const auto* ll = boost::get<ConstLanelet>(&laneletOrArea_);
     if (ll != nullptr) {
       return *ll;
     }
@@ -76,7 +76,7 @@ class ConstLaneletOrArea {
 
   //! get the managed area
   Optional<ConstArea> area() const {
-    auto ar = boost::get<ConstArea>(&laneletOrArea_);
+    const auto* ar = boost::get<ConstArea>(&laneletOrArea_);
     if (ar != nullptr) {
       return *ar;
     }
@@ -84,6 +84,14 @@ class ConstLaneletOrArea {
   }
   //! compares this lanelet or area
   bool equals(const ConstLaneletOrArea& other) const { return laneletOrArea_ == other.laneletOrArea_; }
+
+  //! returns the outer bound if it is an area or the polygon made of the lanelet bounds if it's a lanelet
+  CompoundPolygon3d boundingPolygon() const {
+    if (isArea()) {
+      return area()->outerBoundPolygon();
+    }
+    return lanelet()->polygon3d();
+  }
 
  private:
   boost::variant<ConstLanelet, ConstArea> laneletOrArea_;
@@ -106,7 +114,7 @@ namespace utils {
 inline ConstLanelets getAllLanelets(const ConstLaneletOrAreas& lars) {
   ConstLanelets lanelets;
   lanelets.reserve(lars.size());
-  for (auto& lar : lars) {
+  for (const auto& lar : lars) {
     if (lar.isLanelet()) {
       lanelets.push_back(static_cast<const ConstLanelet&>(lar));
     }
@@ -116,7 +124,7 @@ inline ConstLanelets getAllLanelets(const ConstLaneletOrAreas& lars) {
 inline ConstAreas getAllAreas(const ConstLaneletOrAreas& lars) {
   ConstAreas lanelets;
   lanelets.reserve(lars.size());
-  for (auto& lar : lars) {
+  for (const auto& lar : lars) {
     if (lar.isArea()) {
       lanelets.push_back(static_cast<const ConstArea&>(lar));
     }

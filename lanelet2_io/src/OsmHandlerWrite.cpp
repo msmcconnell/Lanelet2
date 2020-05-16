@@ -69,7 +69,7 @@ class ToFileWriter {
   }
 
  private:
-  ToFileWriter() : file_{std::make_unique<osm::File>()} {}
+  ToFileWriter() = default;
 
   // writers for every primitive
   void writeNodes(const LaneletMap& map, const Projector& projector) {
@@ -158,7 +158,7 @@ class ToFileWriter {
     errors_.push_back("Error writing primitive "s + std::to_string(id) + ": " + what);
   }
 
-  osm::Attributes getAttributes(const AttributeMap& attributes) {
+  static osm::Attributes getAttributes(const AttributeMap& attributes) {
     osm::Attributes osmAttributes;
     for (const auto& attr : attributes) {
       osmAttributes.emplace(attr.first, attr.second.value());
@@ -273,29 +273,32 @@ class ToFileWriter {
     errs.clear();
     if (!errors_.empty()) {
       errs.reserve(errors_.size() + 1);
-      errs.emplace_back("Errors ocurred while parsing Lanelet Map:");
+      errs.emplace_back("Errors ocurred while writing Lanelet Map:");
       for (const auto& err : errors_) {
         errs.emplace_back("\t- " + err);
       }
     }
   }
   Errors errors_;
-  std::unique_ptr<osm::File> file_;
+  std::unique_ptr<osm::File> file_{std::make_unique<osm::File>()};
 };
 
-void testAndPrintLocaleWarning() {
-  auto decimalPoint = std::localeconv()->decimal_point;
+void testAndPrintLocaleWarning(ErrorMessages& errors) {
+  auto* decimalPoint = std::localeconv()->decimal_point;
   if (decimalPoint == nullptr || *decimalPoint != '.') {
-    std::cerr << "Warning: Current decimal point of the C locale is set to \""
-              << (decimalPoint == nullptr ? ' ' : *decimalPoint) << "\". This will lead to invalid osm output!\n";
+    std::stringstream ss;
+    ss << "Warning: Current decimal point of the C locale is set to \""
+       << (decimalPoint == nullptr ? ' ' : *decimalPoint) << "\". This will lead to invalid osm output!\n";
+    errors.emplace_back(ss.str());
+    std::cerr << errors.back();
   }
 }
 }  // namespace
 
 void OsmWriter::write(const std::string& filename, const LaneletMap& laneletMap, ErrorMessages& errors) const {
+  testAndPrintLocaleWarning(errors);
   auto file = toOsmFile(laneletMap, errors);
   auto doc = osm::write(*file);
-  testAndPrintLocaleWarning();
   auto res = doc->save_file(filename.c_str(), "  ");
   if (!res) {
     throw ParseError("Pugixml failed to write the map (unable to create file?)");

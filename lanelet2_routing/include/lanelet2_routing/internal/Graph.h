@@ -116,20 +116,20 @@ class Graph {
   inline size_t numRoutingCosts() const noexcept { return numRoutingCosts_; }
   inline const LaneletOrAreaToVertex& vertexLookup() const noexcept { return laneletOrAreaToVertex_; }
 
-  FilteredGraph withLaneChanges(RoutingCostId routingCostId = 0) {
+  FilteredGraph withLaneChanges(RoutingCostId routingCostId = 0) const {
     return getFilteredGraph(routingCostId, RelationType::Successor | RelationType::Left | RelationType::Right);
   }
 
-  FilteredGraph withoutLaneChanges(RoutingCostId routingCostId = 0) {
+  FilteredGraph withoutLaneChanges(RoutingCostId routingCostId = 0) const {
     return getFilteredGraph(routingCostId, RelationType::Successor);
   }
 
-  FilteredGraph withAreasAndLaneChanges(RoutingCostId routingCostId = 0) {
+  FilteredGraph withAreasAndLaneChanges(RoutingCostId routingCostId = 0) const {
     return getFilteredGraph(routingCostId,
                             RelationType::Successor | RelationType::Left | RelationType::Right | RelationType::Area);
   }
 
-  FilteredGraph withAreasWithoutLaneChanges(RoutingCostId routingCostId = 0) {
+  FilteredGraph withAreasWithoutLaneChanges(RoutingCostId routingCostId = 0) const {
     return getFilteredGraph(routingCostId, RelationType::Successor | RelationType::Area);
   }
 
@@ -167,7 +167,7 @@ class Graph {
 
   //! add new lanelet to graph
   inline Vertex addVertex(const typename BaseGraphT::vertex_property_type& property) {
-    GraphType::vertex_descriptor vd;
+    GraphType::vertex_descriptor vd = 0;
     vd = boost::add_vertex(graph_);
     graph_[vd] = property;
     laneletOrAreaToVertex_.emplace(property.get(), vd);

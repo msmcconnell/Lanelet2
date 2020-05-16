@@ -1,12 +1,13 @@
 #include <lanelet2_core/LaneletMap.h>
 #include <lanelet2_core/geometry/Area.h>
 #include <lanelet2_core/geometry/Lanelet.h>
+#include <lanelet2_core/geometry/LaneletMap.h>
 #include <lanelet2_core/geometry/LineString.h>
 #include <lanelet2_core/geometry/Polygon.h>
 #include <lanelet2_core/geometry/RegulatoryElement.h>
 #include <boost/geometry/geometries/register/multi_linestring.hpp>
 #include <boost/python.hpp>
-#include "converter.h"
+#include "internal/converter.h"
 
 BOOST_GEOMETRY_REGISTER_MULTI_LINESTRING(lanelet::LineStrings2d);
 BOOST_GEOMETRY_REGISTER_MULTI_LINESTRING(lanelet::ConstLineStrings2d);
@@ -27,6 +28,22 @@ auto wrapFindNearest() {
   converters::VectorToListConverter<ResultT>();
   return def("findNearest", func);
 }
+template <typename PrimT, typename GeometryT>
+auto wrapFindWithin2d() {
+  using ResultT = std::vector<std::pair<double, PrimT>>;
+  using Sig = ResultT (*)(PrimitiveLayer<PrimT>&, const GeometryT&, double);
+  auto func = static_cast<Sig>(lanelet::geometry::findWithin2d);
+  return def("findWithin2d", func, (arg("layer"), arg("geometry"), arg("maxDist") = 0),
+             "returns all elements that are closer than maxDist to a geometry in 2d");
+}
+template <typename PrimT, typename GeometryT>
+auto wrapFindWithin3d() {
+  using ResultT = std::vector<std::pair<double, PrimT>>;
+  using Sig = ResultT (*)(PrimitiveLayer<PrimT>&, const GeometryT&, double);
+  auto func = static_cast<Sig>(lanelet::geometry::findWithin3d);
+  return def("findWithin3d", func, (arg("layer"), arg("geometry"), arg("maxDist") = 0),
+             "returns all elements that are closer than maxDist to a geometry in 3d");
+}
 
 std::vector<BasicPoint2d> toBasicVector(const BasicPoints2d& pts) {
   return utils::transform(pts, [](auto& p) { return BasicPoint2d(p.x(), p.y()); });
@@ -42,18 +59,20 @@ lanelet::BoundingBox3d boundingBox3dFor(const T& t) {
   return lanelet::geometry::boundingBox3d(t);
 }
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define TO2D_AS(X)                        \
   if (extract<X>(o).check()) {            \
     return object(to2D(extract<X>(o)())); \
   }
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define TO3D_AS(X)                        \
   if (extract<X>(o).check()) {            \
     return object(to3D(extract<X>(o)())); \
   }
 
 template <typename PtT>
-double distancePointToLss(const PtT& p, object lss) {
+double distancePointToLss(const PtT& p, const object& lss) {
   auto distance = [](PtT p, auto range) {
     return boost::geometry::distance(p, utils::transform(range, [](auto& v) { return utils::toHybrid(v); }));
   };
@@ -65,27 +84,27 @@ double distancePointToLss(const PtT& p, object lss) {
 
 object to2D(object o) {
   using utils::to2D;
-  TO2D_AS(Point3d);
-  TO2D_AS(BasicPoint3d);
-  TO2D_AS(ConstPoint3d);
-  TO2D_AS(LineString3d);
-  TO2D_AS(LineString3d);
-  TO2D_AS(ConstLineString3d);
-  TO2D_AS(Polygon3d);
-  TO2D_AS(ConstPolygon3d);
+  TO2D_AS(Point3d)
+  TO2D_AS(BasicPoint3d)
+  TO2D_AS(ConstPoint3d)
+  TO2D_AS(LineString3d)
+  TO2D_AS(LineString3d)
+  TO2D_AS(ConstLineString3d)
+  TO2D_AS(Polygon3d)
+  TO2D_AS(ConstPolygon3d)
   return o;
 }
 
 object to3D(object o) {
   using utils::to3D;
-  TO3D_AS(Point2d);
-  TO3D_AS(BasicPoint2d);
-  TO3D_AS(ConstPoint2d);
-  TO3D_AS(LineString2d);
-  TO3D_AS(LineString2d);
-  TO3D_AS(ConstLineString2d);
-  TO3D_AS(Polygon2d);
-  TO3D_AS(ConstPolygon2d);
+  TO3D_AS(Point2d)
+  TO3D_AS(BasicPoint2d)
+  TO3D_AS(ConstPoint2d)
+  TO3D_AS(LineString2d)
+  TO3D_AS(LineString2d)
+  TO3D_AS(ConstLineString2d)
+  TO3D_AS(Polygon2d)
+  TO3D_AS(ConstPolygon2d)
   return o;
 }
 #undef TO2D_AS
@@ -124,6 +143,8 @@ BOOST_PYTHON_MODULE(PYTHON_API_MODULE_NAME) {  // NOLINT
   // poly2ls
   def("distance", +[](const ConstPolygon2d& p1, const ConstLineString2d& p2) { return lg::distance2d(p1, p2); });
   def("distance", lg::distance<ConstHybridPolygon2d, ConstHybridLineString2d>);
+  def("distance", +[](const ConstLineString2d& p2, const ConstPolygon2d& p1) { return lg::distance2d(p1, p2); });
+  def("distance", lg::distance<ConstHybridLineString2d, ConstHybridPolygon2d>);
 
   // poly2poly
   def("distance", lg::distance<ConstHybridPolygon2d, ConstHybridPolygon2d>);
@@ -135,9 +156,12 @@ BOOST_PYTHON_MODULE(PYTHON_API_MODULE_NAME) {  // NOLINT
   // p2llt
   def("distance", +[](const ConstLanelet& llt, const BasicPoint2d& p) { return lg::distance2d(llt, p); });
   def("distance", +[](const ConstLanelet& llt1, const ConstLanelet& llt2) { return lg::distance2d(llt1, llt2); });
+  def("distance", +[](const BasicPoint2d& p, const ConstLanelet& llt) { return lg::distance2d(llt, p); });
+  def("distance", +[](const ConstLanelet& llt2, const ConstLanelet& llt1) { return lg::distance2d(llt1, llt2); });
 
   // p2area
   def("distance", +[](const ConstArea& llt, const BasicPoint2d& p) { return lg::distance2d(llt, p); });
+  def("distance", +[](const BasicPoint2d& p, const ConstArea& llt) { return lg::distance2d(llt, p); });
 
   // 3d
   // p2p
@@ -164,9 +188,23 @@ BOOST_PYTHON_MODULE(PYTHON_API_MODULE_NAME) {  // NOLINT
 
   // p2llt
   def("distance", lg::distance3d<ConstLanelet, BasicPoint3d>);
+  def("distance", lg::distance3d<BasicPoint3d, ConstLanelet>);
 
   // p2area
   def("distance", +[](const ConstArea& llt, const BasicPoint3d& p) { return lg::distance3d(llt, p); });
+  def("distance", +[](const BasicPoint3d& p, const ConstArea& llt) { return lg::distance3d(llt, p); });
+
+  // equals 2d
+  def("equals", boost::geometry::equals<BasicPoint2d, BasicPoint2d>);
+  def("equals", boost::geometry::equals<ConstPoint2d, ConstPoint2d>);
+  def("equals", boost::geometry::equals<ConstPoint2d, BasicPoint2d>);
+  def("equals", boost::geometry::equals<BasicPoint2d, ConstPoint2d>);
+
+  // equals 3d
+  def("equals", boost::geometry::equals<BasicPoint3d, BasicPoint3d>);
+  def("equals", boost::geometry::equals<ConstPoint3d, ConstPoint3d>);
+  def("equals", boost::geometry::equals<ConstPoint3d, BasicPoint3d>);
+  def("equals", boost::geometry::equals<BasicPoint3d, ConstPoint3d>);
 
   def("boundingBox2d", boundingBox2dFor<ConstPoint2d>, "Get the surrounding axis-aligned bounding box in 2d");
   def("boundingBox2d", boundingBox2dFor<ConstLineString2d>);
@@ -187,6 +225,10 @@ BOOST_PYTHON_MODULE(PYTHON_API_MODULE_NAME) {  // NOLINT
   def("boundingBox3d", boundingBox3dFor<ConstArea>);
   def("boundingBox3d", boundingBox3dFor<RegulatoryElementPtr>);
   def("boundingBox3d", boundingBox3dFor<RegulatoryElementConstPtr>);
+
+  // area
+  def("area", boost::geometry::area<BasicPolygon2d>);
+  def("area", boost::geometry::area<ConstHybridPolygon2d>);
 
   class_<ArcCoordinates>("ArcCoordinates", "Coordinates along an arc", init<>())
       .add_property("length", &ArcCoordinates::length, "lenght along arc")
@@ -222,10 +264,12 @@ BOOST_PYTHON_MODULE(PYTHON_API_MODULE_NAME) {  // NOLINT
     return lg::intersects(utils::toHybrid(ls1), utils::toHybrid(ls2));
   });
   def("intersects2d", lg::intersects<ConstHybridPolygon2d, ConstHybridPolygon2d>);
+  def("intersects2d", lg::intersects<BoundingBox3d, BoundingBox3d>);
   def("intersects2d", lg::intersects2d<ConstLanelet, ConstLanelet>);
   def("intersects2d", lg::intersects2d<ConstArea, ConstArea>);
 
   def("intersects3d", lg::intersects3d<ConstLineString3d>);
+  def("intersects3d", lg::intersects<BoundingBox3d, BoundingBox3d>);
   def("intersects3d", lg::intersects3d<ConstHybridLineString3d>);
   def("intersects3d", lg::intersects3d<ConstLanelet, ConstLanelet>,
       "Approximates if two lanelets intersect (touch or area  >0) in 3d",
@@ -255,4 +299,76 @@ BOOST_PYTHON_MODULE(PYTHON_API_MODULE_NAME) {  // NOLINT
   wrapFindNearest<Lanelet>();
   wrapFindNearest<Area>();
   wrapFindNearest<RegulatoryElementPtr>();
+
+  // find within, point layer
+  wrapFindWithin2d<Point3d, Point2d>();
+  wrapFindWithin2d<Point3d, BasicPoint2d>();
+  wrapFindWithin2d<Point3d, BoundingBox2d>();
+  wrapFindWithin2d<Point3d, Polygon2d>();
+  wrapFindWithin2d<Point3d, BasicPolygon2d>();
+  wrapFindWithin2d<Point3d, LineString2d>();
+  wrapFindWithin2d<Point3d, BasicLineString2d>();
+  wrapFindWithin2d<Point3d, Lanelet>();
+  wrapFindWithin2d<Point3d, Area>();
+  wrapFindWithin3d<Point3d, Point3d>();
+  wrapFindWithin3d<Point3d, BasicPoint3d>();
+  wrapFindWithin3d<Point3d, BoundingBox3d>();
+  wrapFindWithin3d<Point3d, Polygon3d>();
+  wrapFindWithin3d<Point3d, BasicPolygon3d>();
+  wrapFindWithin3d<Point3d, LineString3d>();
+  wrapFindWithin3d<Point3d, BasicLineString3d>();
+  wrapFindWithin3d<Point3d, Lanelet>();
+  wrapFindWithin3d<Point3d, Area>();
+
+  // linestring layer
+  wrapFindWithin2d<LineString3d, Point2d>();
+  wrapFindWithin2d<LineString3d, BasicPoint2d>();
+  wrapFindWithin2d<LineString3d, BoundingBox2d>();
+  wrapFindWithin2d<LineString3d, Polygon2d>();
+  wrapFindWithin2d<LineString3d, BasicPolygon2d>();
+  wrapFindWithin2d<LineString3d, LineString2d>();
+  wrapFindWithin2d<LineString3d, Lanelet>();
+  wrapFindWithin2d<LineString3d, Area>();
+  wrapFindWithin2d<LineString3d, BasicLineString2d>();
+  wrapFindWithin3d<LineString3d, Point3d>();
+  wrapFindWithin3d<LineString3d, BasicPoint3d>();
+
+  // polygon layer
+  wrapFindWithin2d<Polygon3d, Point2d>();
+  wrapFindWithin2d<Polygon3d, BasicPoint2d>();
+  wrapFindWithin2d<Polygon3d, BoundingBox2d>();
+  wrapFindWithin2d<Polygon3d, Polygon2d>();
+  wrapFindWithin2d<Polygon3d, BasicPolygon2d>();
+  wrapFindWithin2d<Polygon3d, LineString2d>();
+  wrapFindWithin2d<Polygon3d, BasicLineString2d>();
+  wrapFindWithin2d<Polygon3d, Lanelet>();
+  wrapFindWithin2d<Polygon3d, Area>();
+  wrapFindWithin3d<Polygon3d, Point3d>();
+  wrapFindWithin3d<Polygon3d, BasicPoint3d>();
+
+  // lanelet layer
+  wrapFindWithin2d<Lanelet, Point2d>();
+  wrapFindWithin2d<Lanelet, BasicPoint2d>();
+  wrapFindWithin2d<Lanelet, BoundingBox2d>();
+  wrapFindWithin2d<Lanelet, Polygon2d>();
+  wrapFindWithin2d<Lanelet, BasicPolygon2d>();
+  wrapFindWithin2d<Lanelet, LineString2d>();
+  wrapFindWithin2d<Lanelet, BasicLineString2d>();
+  wrapFindWithin2d<Lanelet, Lanelet>();
+  wrapFindWithin2d<Lanelet, Area>();
+  wrapFindWithin3d<Lanelet, Point3d>();
+  wrapFindWithin3d<Lanelet, BasicPoint3d>();
+
+  // area layer
+  wrapFindWithin2d<Area, Point2d>();
+  wrapFindWithin2d<Area, BasicPoint2d>();
+  wrapFindWithin2d<Area, BoundingBox2d>();
+  wrapFindWithin2d<Area, Polygon2d>();
+  wrapFindWithin2d<Area, BasicPolygon2d>();
+  wrapFindWithin2d<Area, LineString2d>();
+  wrapFindWithin2d<Area, BasicLineString2d>();
+  wrapFindWithin2d<Area, Lanelet>();
+  wrapFindWithin2d<Area, Area>();
+  wrapFindWithin3d<Area, Point3d>();
+  wrapFindWithin3d<Area, BasicPoint3d>();
 }

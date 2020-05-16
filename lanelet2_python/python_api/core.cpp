@@ -9,7 +9,7 @@
 #include <lanelet2_core/primitives/LaneletOrArea.h>
 #include <lanelet2_core/primitives/LaneletSequence.h>
 #include <lanelet2_core/primitives/RegulatoryElement.h>
-#include "converter.h"
+#include "internal/converter.h"
 
 using namespace boost::python;
 using namespace lanelet;
@@ -224,7 +224,6 @@ class IsConstPrimitive : public def_visitor<IsConstPrimitive<PrimT>> {
  public:
   template <typename ClassT>
   void visit(ClassT& c) const {
-    namespace py = boost::python;
     c.add_property("id", &PrimT::id);
     const AttributeMap& (PrimT::*attr)() const = &PrimT::attributes;
     c.add_property("attributes", getRefFunc(attr));
@@ -359,8 +358,9 @@ std::vector<std::shared_ptr<RegelemT>> regelemAs(Lanelet& llt) {
 }
 
 template <typename RegelemT>
-std::vector<std::shared_ptr<const RegelemT>> constRegelemAs(ConstLanelet& llt) {
-  return llt.regulatoryElementsAs<RegelemT>();
+std::vector<std::shared_ptr<RegelemT>> constRegelemAs(ConstLanelet& llt) {
+  return utils::transform(llt.regulatoryElementsAs<RegelemT>(),
+                          [](auto& e) { return std::const_pointer_cast<RegelemT>(e); });
 }
 
 template <typename PrimT>
@@ -459,6 +459,7 @@ BOOST_PYTHON_MODULE(PYTHON_API_MODULE_NAME) {  // NOLINT
   VectorToListConverter<LineStringsOrPolygons3d>();
   VectorToListConverter<ConstLineStringsOrPolygons3d>();
   VectorToListConverter<ConstLaneletOrAreas>();
+  VectorToListConverter<Areas>();
   VectorToListConverter<std::vector<TrafficLight::Ptr>>();
   VectorToListConverter<std::vector<TrafficSign::Ptr>>();
   VectorToListConverter<std::vector<SpeedLimit::Ptr>>();
@@ -698,7 +699,9 @@ BOOST_PYTHON_MODULE(PYTHON_API_MODULE_NAME) {  // NOLINT
       .def("invert", &ConstLanelet::invert, "Returns inverted lanelet (flipped left/right bound, etc")
       .def("inverted", &ConstLanelet::inverted, "Returns whether this lanelet has been inverted")
       .def("polygon2d", &ConstLanelet::polygon2d, "Outline of this lanelet as 2d polygon")
-      .def("polygon3d", &ConstLanelet::polygon3d, "Outline of this lanelet as 3d polygon");
+      .def("polygon3d", &ConstLanelet::polygon3d, "Outline of this lanelet as 3d polygon")
+      .def("resetCache", &ConstLanelet::resetCache,
+           "Reset the cache. Forces update of the centerline if points have chagned");
 
   auto left = static_cast<LineString3d (Lanelet::*)()>(&Lanelet::leftBound);
   auto right = static_cast<LineString3d (Lanelet::*)()>(&Lanelet::rightBound);
@@ -839,10 +842,10 @@ BOOST_PYTHON_MODULE(PYTHON_API_MODULE_NAME) {  // NOLINT
 
   class_<TrafficSignsWithType, std::shared_ptr<TrafficSignsWithType>>("TrafficSignsWithType", no_init)
       .def("__init__", make_constructor(+[](LineStringsOrPolygons3d ls) {
-             return std::make_shared<TrafficSignsWithType>(TrafficSignsWithType{ls});
+             return std::make_shared<TrafficSignsWithType>(TrafficSignsWithType{std::move(ls)});
            }))
       .def("__init__", make_constructor(+[](LineStringsOrPolygons3d ls, std::string type) {
-             return std::make_shared<TrafficSignsWithType>(TrafficSignsWithType{ls, type});
+             return std::make_shared<TrafficSignsWithType>(TrafficSignsWithType{std::move(ls), std::move(type)});
            }))
       .add_property("trafficSigns", &TrafficSignsWithType::trafficSigns)
       .add_property("type", &TrafficSignsWithType::type);
@@ -873,7 +876,11 @@ BOOST_PYTHON_MODULE(PYTHON_API_MODULE_NAME) {  // NOLINT
   implicitly_convertible<std::shared_ptr<SpeedLimit>, RegulatoryElementPtr>();
 
   class_<SpeedLimit, boost::noncopyable, std::shared_ptr<SpeedLimit>, bases<TrafficSign>>(  // NOLINT
-      "SpeedLimit", "A speed limit regulatory element", no_init);
+      "SpeedLimit", "A speed limit regulatory element", no_init)
+      .def("__init__", make_constructor(&TrafficSign::make, default_call_policies(),
+                                        (arg("id"), arg("attributes"), arg("trafficSigns"),
+                                         arg("cancellingTrafficSigns") = TrafficSignsWithType{},
+                                         arg("refLines") = LineStrings3d(), arg("cancelLines") = LineStrings3d())));
 
   class_<PrimitiveLayer<Area>, boost::noncopyable>("PrimitiveLayerArea", no_init);        // NOLINT
   class_<PrimitiveLayer<Lanelet>, boost::noncopyable>("PrimitiveLayerLanelet", no_init);  // NOLINT
@@ -903,7 +910,7 @@ BOOST_PYTHON_MODULE(PYTHON_API_MODULE_NAME) {  // NOLINT
 
   class_<LaneletMap, bases<LaneletMapLayers>, LaneletMapPtr, boost::noncopyable>(
       "LaneletMap", "Object for managing a lanelet map", init<>("LaneletMap()"))
-      .def("add", selectSubmapAdd<Point3d>())
+      .def("add", selectAdd<Point3d>())
       .def("add", selectAdd<Lanelet>())
       .def("add", selectAdd<Area>())
       .def("add", selectAdd<LineString3d>())
@@ -913,7 +920,7 @@ BOOST_PYTHON_MODULE(PYTHON_API_MODULE_NAME) {  // NOLINT
 
   class_<LaneletSubmap, bases<LaneletMapLayers>, LaneletSubmapPtr, boost::noncopyable>(
       "LaneletSubmap", "Object for managing parts of a lanelet map", init<>("LaneletSubmap()"))
-      .def("laneletMap", +[](LaneletSubmap& self) { return self.laneletMap(); })
+      .def("laneletMap", +[](LaneletSubmap& self) { return LaneletMapPtr{self.laneletMap()}; })
       .def("add", selectSubmapAdd<Point3d>())
       .def("add", selectSubmapAdd<Lanelet>())
       .def("add", selectSubmapAdd<Area>())

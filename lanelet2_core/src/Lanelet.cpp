@@ -64,7 +64,7 @@ class BoundChecker {
   }
 
   bool secondCrossesBounds(const BasicSegment2d& seg, bool left) const {
-    auto& segmentTree = left ? leftSegments_ : rightSegments_;
+    const auto& segmentTree = left ? leftSegments_ : rightSegments_;
     for (auto it = segmentTree.qbegin(bgi::intersects(seg)); it != segmentTree.qend(); ++it) {
       using boost::geometry::equals;
       if (!equals(it->first, seg.second) && !equals(it->second, seg.second)) {
@@ -196,8 +196,10 @@ std::shared_ptr<ConstLineString3d> calculateCenterline(const ConstLineString2d& 
     ++leftCurrent;
   }
   while (leftCurrent != leftBound.end() || rightCurrent != rightBound.end()) {
-    OptDistance leftCandidateDistance, rightCandidateDistance;
-    ConstLineString2d::const_iterator leftCandidate, rightCandidate;
+    OptDistance leftCandidateDistance;
+    OptDistance rightCandidateDistance;
+    ConstLineString2d::const_iterator leftCandidate;
+    ConstLineString2d::const_iterator rightCandidate;
 
     // Determine left candidate
     std::tie(leftCandidate, leftCandidateDistance) =
